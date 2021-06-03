@@ -460,12 +460,7 @@ instructing the spec mechanism to apply the referred template (a member of
 `templates` in the top-level spec). The attributes locally defined in the object
 will override those from the template. An object may `!extends` only one
 template. A template can also `!extends` another template (analogous to
-subclassing). The templates are applied to objects in the spec before the
-`%ATTR%` substitution is processed.
-
-The `%ATTR%` appearing in the value string (e.g. `/%hostname%/%plugin%`) is
-replaced by the value of the attribute ATTR of the nearest container object
-(starts from self, container of self, container of container of self, ..).
+subclassing).
 
 Consider the following example:
 
@@ -643,7 +638,7 @@ The following is the skeleton of the spec:
 
 
 The following is an example defining a virtual cluster of 5 nodes: 2 compute
-nodes with sampler daemon and slurmd, 2 aggregator nodes with ldmsd running in
+nodes with munged, sampler daemon and slurmd, 2 aggregator nodes with ldmsd running in
 aggregator mode, and 1 head node running slurmctld.
 
 ```python

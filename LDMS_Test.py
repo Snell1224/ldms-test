@@ -1400,6 +1400,7 @@ class LDMSDContainer(DockerClusterContainer):
         if not spec:
             return # no ldmsd spec for this node and no spec given
         cfg = self.get_ldmsd_config(spec)
+        #print("THIS IS CFG: {}".format(cfg))
         self.write_file(spec["config_file"], cfg)
         cmd = self.get_ldmsd_cmd(spec)
         self.exec_run(cmd, environment = env_dict(spec["env"]))
@@ -1431,9 +1432,10 @@ class LDMSDContainer(DockerClusterContainer):
         v.update(w) # dspec precede svc_spec
         dspec["env"] = v
         dspec.setdefault("log_file", "/var/log/ldmsd.log")
-        dspec.setdefault("log_level", "INFO")
+        dspec.setdefault("log_level", "DEBUG")
         dspec.setdefault("listen_auth", "none")
         dspec.setdefault("config_file", "/etc/ldmsd.conf")
+        #dspec.setdefault("peer_name", self.hostname)
         return dspec
 
     @cached_property
@@ -1524,6 +1526,7 @@ class LDMSDContainer(DockerClusterContainer):
         cmd = "ldmsd {XPRT_OPT} {AUTH_OPT}" \
               "      -c {config_file} -l {log_file} -v {log_level}" \
               .format(XPRT_OPT=XPRT_OPT, AUTH_OPT=AUTH_OPT, **spec)
+        #print("THIS IS THE CMD COMMAND: {}".format(cmd))
         return cmd
 
     def ldms_ls(self, *args):
