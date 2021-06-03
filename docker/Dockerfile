@@ -20,8 +20,9 @@ yum -y install epel-release ; \
 yum -y install which openssh-server gdb gdb-gdbserver iproute \
                openssl openssl-devel vim readline-devel \
 	       perl-ExtUtils-MakeMaker pam-devel mariadb-devel libcurl-devel \
-	       python3-devel python2-devel python2-pip papi-devel libpfm-devel tmux \
-	       bzip2-devel \
+	       python3-devel papi-devel libpfm-devel tmux \
+	       bzip2-devel etcd \
+	       sudo libibverbs-devel libfabric-devel \
 	       ; \
 yum -y group install "Development Tools" ; \
 yum clean all ; \
@@ -47,8 +48,8 @@ dd if=/dev/zero of=/etc/munge/munge.key bs=4096 count=1 \
     && chown munge:munge /etc/munge/munge.key ; \
 echo "---- Build and install slurm ----" ; \
 cd /root ; \
-curl -O https://download.schedmd.com/slurm/slurm-17.02.11.tar.bz2 ; \
-rpmbuild -ta slurm-17.02.11.tar.bz2 ; \
+curl -O https://download.schedmd.com/slurm/slurm-20.11.7.tar.bz2 ; \
+rpmbuild -ta slurm-20.11.7.tar.bz2 ; \
 cd /root/rpmbuild/RPMS/x86_64 ; \
 yum -y install slurm-*.rpm ; \
 rm -rf /root/rpmbuild/BUILD/slurm-17.02.11 ; \
@@ -56,13 +57,12 @@ yum clean all ; \
 '
 
 RUN /bin/bash -c '\
+yes | pip3 install --upgrade pip ; \
 yes | pip3 install Cython ; \
 yes | pip3 install numpy ; \
-'
-
-RUN /bin/bash -c '\
-yes | pip install --upgrade pip ; \
-yes | pip install numpy ; \
+yes | pip3 install etcd3 ; \
+yes | pip3 install PyYAML ; \
+yes | pip3 install ipython ; \
 '
 
 RUN /bin/echo >/etc/tmux.conf -e "\
