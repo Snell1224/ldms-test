@@ -9,6 +9,8 @@ import TADA
 import time
 import json
 import logging
+import atexit
+import shutil
 
 from io import StringIO
 
@@ -20,6 +22,9 @@ logging.basicConfig(format = "%(asctime)s %(name)s %(levelname)s %(message)s",
                     level = logging.INFO)
 
 log = logging.getLogger(__name__)
+
+TADA_LIB = "/data/tada/lib"
+TADA_SRC = "/tada-src"
 
 spec = {
     "name" : "REPLACE_ME",
@@ -165,7 +170,7 @@ spec = {
 
     #"image": "ovis-centos-build:slurm",
     "cap_add": [ "SYS_PTRACE" ],
-    "image": args.image,
+    "image": None,
     "ovis_prefix": "REPLACE_ME",
     "env" : {
         "LD_LIBRARY_PATH": "/data/tada/lib:/opt/ovis/lib:/opt/ovis/lib64",
@@ -238,6 +243,18 @@ def verify_msg(test, assert_no, msg, json_data, err_text):
         return False
     return True
 
+def start_publisher(cont, host, port, stream_type, fin):
+    cmd = "ldmsd_stream_publish -h {host} -x {xprt} -p {port} -a munge " \
+                               "-s {name} -t {type} -f {fin} 2>&1" \
+          .format( host = host,
+                       xprt = "sock",
+                       port = port,
+                       name = "test_stream",
+                       type = stream_type,
+                       fin = fin)
+    rc, out = cont.exec_run(cmd)
+    if rc:
+        raise RuntimeError("Failed to start ldmsd_stream_publish. Error {}".format(rc))
 
 if __name__ == "__main__":
     if sys.flags.interactive:
@@ -258,6 +275,7 @@ if __name__ == "__main__":
         spec["mounts"] += [ "{0}:{0}:ro".format(args.src) ]
     spec["env"]["TADA_USER"] = args.user
     spec["env"]["TADA_ADDR"] = args.tada_addr
+    spec["image"] = args.image
 
     # remove existing files
     rm(args.data_root + "/stream-sampler-1.out")
@@ -298,15 +316,31 @@ if __name__ == "__main__":
 
     test.add_assertion(19, 'stream-sampler-2 removes agg-1 stream client after disconnected')
 
+    cluster = None
     # Tell the TADA infrastructure that the test is starting
     test.start()
+
+    @atexit.register
+    def at_exit():
+        rc = test.finish()
+        # cleanup data
+        flist = [ "agg-2.out", "stream-sampler-1.out", "stream-sampler-2.out",
+                  "Stream_Test-data.json", "tada/" ]
+        flist = [ "/{}/{}".format(args.data_root, x) for x in flist ]
+        for f in flist:
+            shutil.rmtree(f, ignore_errors = True)
+        if cluster is not None:
+            cluster.remove()
+        os._exit(rc)
 
     # Create the containers required to ruyn the test
     cluster = LDMSDCluster.get(clustername, create = True, spec = spec)
 
-    # Build libtada and libtest_stream_sampler before starting ldmsd
+    # Build libtest_stream_sampler before starting ldmsd
     cont = cluster.get_container("agg-1")
-    rc, out = cont.exec_run("make -C /tada-src/C BUILDDIR=/data/tada/lib")
+    # Cleanup old files
+    rc, out = cont.exec_run("rm -f /data/*.out /data/*.json {}/*".format(TADA_LIB))
+    rc, out = cont.exec_run("make -C {0}/C BUILDDIR={1}".format(TADA_SRC, TADA_LIB))
     if rc:
         raise RuntimeError("libtada build failed, output: {}".format(out))
 
@@ -333,19 +367,10 @@ if __name__ == "__main__":
     for host in [ 'stream-sampler-1', 'stream-sampler-2' ]:
         cont = cluster.get_container(host)
         cont.write_file(data_file, text_data)
-        cmd = "bash -c \"" \
-              "/data/tada/lib/test_stream_publish -h {host} -x {xprt} -p {port} -a {auth}" \
-              " -s test_stream -t json -f {fname} & " \
-              "/data/tada/lib/test_stream_publish -h {host} -x {xprt} -p {port} -a {auth}" \
-              " -s test_stream -t string -f {fname} & " \
-              "wait" \
-              "\"".format( fname=data_file,
-                           host=host,
-                           xprt=cont.ldmsd_spec["listen_xprt"],
-                           port=cont.ldmsd_spec["listen_port"],
-                           auth=cont.ldmsd_spec["listen_auth"] )
+        start_publisher(cont, host, cont.ldmsd_spec["listen_port"], "json", data_file)
+        start_publisher(cont, host, cont.ldmsd_spec["listen_port"], "string", data_file)
 
-        rc, out = cont.exec_run(cmd)
+    time.sleep(2)
 
     # data verification
     samp1 = cluster.get_container("stream-sampler-1")
@@ -434,19 +459,10 @@ if __name__ == "__main__":
     for host in [ 'stream-sampler-1', 'stream-sampler-2' ]:
         cont = cluster.get_container(host)
         cont.write_file(data_file, text_data)
-        cmd = "bash -c \"" \
-              "/data/tada/lib/test_stream_publish -h {host} -x {xprt} -p {port} -a {auth}" \
-              " -s test_stream -t json -f {fname} & " \
-              "/data/tada/lib/test_stream_publish -h {host} -x {xprt} -p {port} -a {auth}" \
-              " -s test_stream -t string -f {fname} & " \
-              "wait" \
-              "\"".format( fname=data_file,
-                           host=host,
-                           xprt=cont.ldmsd_spec["listen_xprt"],
-                           port=cont.ldmsd_spec["listen_port"],
-                           auth=cont.ldmsd_spec["listen_auth"] )
+        start_publisher(cont, host, cont.ldmsd_spec["listen_port"], "json", data_file)
+        start_publisher(cont, host, cont.ldmsd_spec["listen_port"], "string", data_file)
 
-        rc, out = cont.exec_run(cmd)
+    time.sleep(2)
 
     samp1_out_txt2 = samp1.read_file("/data/stream-sampler-1.out")
     samp2_out_txt2 = samp2.read_file("/data/stream-sampler-2.out")
@@ -528,18 +544,10 @@ if __name__ == "__main__":
     for host in [ 'stream-sampler-1' ]:
         cont = cluster.get_container(host)
         cont.write_file(data_file, text_data)
-        cmd = "bash -c \"" \
-              "/data/tada/lib/test_stream_publish -h {host} -x {xprt} -p {port} -a {auth}" \
-              " -s test_stream -t json -f {fname} & " \
-              "/data/tada/lib/test_stream_publish -h {host} -x {xprt} -p {port} -a {auth}" \
-              " -s test_stream -t string -f {fname} & " \
-              "wait" \
-              "\"".format( fname=data_file,
-                           host=host,
-                           xprt=cont.ldmsd_spec["listen_xprt"],
-                           port=cont.ldmsd_spec["listen_port"],
-                           auth=cont.ldmsd_spec["listen_auth"] )
-        rc, out = cont.exec_run(cmd)
+        start_publisher(cont, host, cont.ldmsd_spec["listen_port"], "json", data_file)
+        start_publisher(cont, host, cont.ldmsd_spec["listen_port"], "string", data_file)
+
+    time.sleep(2)
 
     # samp1 was reset
     samp1_out_txt3 = samp1.read_file("/data/stream-sampler-1.out")
@@ -617,19 +625,10 @@ if __name__ == "__main__":
         text_data = json.dumps(_data)
         cont = cluster.get_container(host)
         cont.write_file(data_file, text_data)
-        cmd = "bash -c \"" \
-              "/data/tada/lib/test_stream_publish -h {host} -x {xprt} -p {port} -a {auth}" \
-              " -s test_stream -t json -f {fname} & " \
-              "/data/tada/lib/test_stream_publish -h {host} -x {xprt} -p {port} -a {auth}" \
-              " -s test_stream -t string -f {fname} & " \
-              "wait" \
-              "\"".format( fname=data_file,
-                           host=host,
-                           xprt=cont.ldmsd_spec["listen_xprt"],
-                           port=cont.ldmsd_spec["listen_port"],
-                           auth=cont.ldmsd_spec["listen_auth"] )
+        start_publisher(cont, host, cont.ldmsd_spec["listen_port"], "json", data_file)
+        start_publisher(cont, host, cont.ldmsd_spec["listen_port"], "string", data_file)
 
-        rc, out = cont.exec_run(cmd)
+    time.sleep(2)
 
     samp1_out_txt_post = samp1.read_file("/data/stream-sampler-1.out")
     samp2_out_txt_post = samp2.read_file("/data/stream-sampler-2.out")
@@ -712,11 +711,4 @@ if __name__ == "__main__":
         test.assert_test(19, True, "verified")
         break
 
-    test.finish()
-    # cleanup data
-    flist = [ "agg-2.out", "stream-sampler-1.out", "stream-sampler-2.out",
-              "Stream_Test-data.json", "tada/" ]
-    flist = [ "/data/{}".format(x) for x in flist ]
-    rm = "rm -rf " + ( " ".join(flist) )
-    agg2.exec_run(rm)
-    cluster.remove()
+# see at_exit()

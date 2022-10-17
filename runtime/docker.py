@@ -18,7 +18,7 @@ from io import StringIO, BytesIO
 from distutils.version import LooseVersion
 
 from LDMS_Test import cached_property, LDMSDContainerTTY, LDMSDContainer, \
-                      LDMSDCluster, Spec, env_dict
+                      LDMSDCluster, Spec, env_dict, cs_rm
 
 # `D` Debug object to store values for debugging
 class Debug(object): pass
@@ -36,6 +36,8 @@ def get_docker_clients():
     nodes = dc.nodes.list()
     addrs = [ n.attrs["Description"]["Hostname"] for n in nodes ]
     addrs.sort()
+    if len(addrs) == 1:
+            return [ dc ]
     return [ docker.DockerClient(base_url = "tcp://{}:2375".format(a)) \
                     for a in addrs ]
 
@@ -67,7 +69,7 @@ class ContainerTTY(LDMSDContainerTTY):
                 active = 0
                 time.sleep(idle_timeout)
         val = bio.getvalue()
-        return val.decode() if val else None
+        return cs_rm(val.decode()) if val is not None else None
 
     def write(self, data):
         if type(data) == str:
@@ -137,6 +139,8 @@ class Container(LDMSDContainer):
         return True
 
     def exec_run(self, cmd, env=None, user=None):
+        if type(cmd) != list:
+            cmd = [ '/bin/bash', '-c', cmd ]
         return self._exec_run(cmd, environment=env, user=user)
 
     def _exec_run(self, *args, **kwargs):
@@ -349,6 +353,29 @@ class Network(object):
     def connect(self, container, *args, **kwargs):
         return self.obj.connect(container, *args, **kwargs)
 
+def get_host_tz():
+    # try TZ env first
+    try:
+        tz = os.getenv('TZ')
+        if tz is not None:
+            return tz
+    except:
+        pass
+    # try /etc/timezone
+    try:
+        tz = open('/etc/timezone').read().strip()
+        if tz:
+            return tz
+    except:
+        pass
+    # then try /etc/localtime link
+    try:
+        tz = '/'.join(os.readlink('/etc/localtime').split('/')[-2:])
+        return tz
+    except:
+        pass
+    # otherwise, UTC
+    return 'Etc/UTC'
 
 class DockerCluster(LDMSDCluster):
     """Docker Cluster
@@ -387,8 +414,9 @@ class DockerCluster(LDMSDCluster):
 
     @classmethod
     def _create(cls, spec):
-        kwargs = cls.spec_to_kwargs(Spec(spec))
-        return cls.__create(**kwargs)
+        sp = Spec(spec)
+        kwargs = cls.spec_to_kwargs(sp)
+        return cls.__create(spec=sp, **kwargs)
 
     @classmethod
     def __create(cls, name, image = "centos:7", nodes = 8,
@@ -397,7 +425,8 @@ class DockerCluster(LDMSDCluster):
                     cap_add = [],
                     cap_drop = [],
                     subnet = None,
-                    host_binds = {}):
+                    host_binds = {},
+                    spec = None):
         """Create virtual cluster with docker network and service
 
         If the docker network existed, this will failed. The hostname of each
@@ -451,6 +480,10 @@ class DockerCluster(LDMSDCluster):
         if type(nodes) == int:
             nodes = [ "node-{}".format(i) for i in range(0, nodes) ]
         lbl = dict(labels)
+        _env = env
+        env = dict(_env) # shallow copy env
+        host_tz = get_host_tz()
+        env.setdefault('TZ', host_tz)
         cfg = dict(name = name,
                    image = image,
                    env = env,
@@ -509,6 +542,15 @@ class DockerCluster(LDMSDCluster):
                 idx += 1
                 hostname = node
                 cont_name = "{}-{}".format(name, node)
+                tmpfs = None
+                try:
+                    spec_nodes = spec["nodes"]
+                    for _n in spec_nodes:
+                        if _n["hostname"] == hostname:
+                            tmpfs = _n.get("tmpfs")
+                            break
+                except:
+                    pass
                 cont_param = dict(
                         image = image,
                         name = cont_name,
@@ -521,6 +563,14 @@ class DockerCluster(LDMSDCluster):
                         cap_drop = cap_drop,
                         #network = name,
                         hostname = hostname,
+                        ulimits = [
+                            docker.types.Ulimit(
+                                name = "nofile",
+                                soft = 1000000,
+                                hard = 1000000,
+                            )
+                        ],
+                        tmpfs = tmpfs,
                     )
                 binds = host_binds.get(hostname)
                 if binds:
@@ -560,7 +610,7 @@ class DockerCluster(LDMSDCluster):
         if prefix:
             mounts += ["{}:/opt/ovis:ro".format(prefix)]
             # handling python path
-            pp = glob.glob(prefix+'/lib*/python*/site-packages')
+            pp = glob.glob(prefix+'/lib*/python*/*-packages')
             pp = [ p.replace(prefix, '/opt/ovis', 1) for p in pp ]
             _PYTHONPATH = ':'.join(pp)
         if not _PYTHONPATH:

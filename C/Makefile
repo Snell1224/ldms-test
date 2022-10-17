@@ -6,12 +6,12 @@ GCC_COMMON_FLAGS = -ggdb3 -O0
 TARGETS = $(BUILDDIR)/libutil.so \
 	  $(BUILDDIR)/libtada.so \
 	  $(BUILDDIR)/libtest_stream_sampler.so \
-	  $(BUILDDIR)/test_stream_publish \
 	  $(BUILDDIR)/test_ovis_ev \
-	  $(BUILDDIR)/test_ovis_json
+	  $(BUILDDIR)/test_ovis_json \
+	  $(BUILDDIR)/libtest_store.so
 
 LDMSD_VERSION = $(shell /usr/bin/strings ${OVIS_PREFIX}/sbin/ldmsd | \
-	      grep OVIS_LDMS_VERSION | \
+	      grep -E 'OVIS_LDMS_VERSION|LDMSD_VERSION' | \
 	      sed 's/.*"\(.*\)"/\1/' )
 LDMSD_MAJOR_VERSION = $(shell echo ${LDMSD_VERSION} | cut -d . -f 1)
 LDMSD_MINOR_VERSION = $(shell echo ${LDMSD_VERSION} | cut -d . -f 2)
@@ -53,11 +53,13 @@ else
 	ln -fs $@ $@.0
 endif
 
-$(BUILDDIR)/test_stream_publish: test_stream_publish.c
+$(BUILDDIR)/libtest_store.so: test_store.c
 	mkdir -p $(BUILDDIR)
-	gcc -I $(OVIS_PREFIX)/include -o $@ \
-		$^ -L$(OVIS_PREFIX)/lib -L$(OVIS_PREFIX)/lib64 \
-		-lldms -lldmsd_stream -lovis_util -pthread ${GCC_COMMON_FLAGS}
+	gcc -I $(OVIS_PREFIX)/include -o $@ -fPIC -shared \
+	    $^ -L$(OVIS_PREFIX)/lib -L$(OVIS_PREFIX)/lib64 \
+	    -lldms \
+	    ${GCC_COMMON_FLAGS}
+	ln -fs $@ $@.0
 
 $(BUILDDIR)/test_ovis_ev: test_ovis_ev.c
 	mkdir -p $(BUILDDIR)

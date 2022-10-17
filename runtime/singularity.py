@@ -11,7 +11,10 @@ import json
 import shlex
 import heapq
 import errno
+import fcntl
 import socket
+import struct
+import termios
 import logging
 import threading
 
@@ -359,6 +362,8 @@ class PtyPopen(object):
 
         """
         self._pfd, cfd = pty.openpty()
+        winsz = struct.pack("HHHH", 80, 240, 0, 0) # row, col, xpix, ypix
+        fcntl.ioctl(cfd, termios.TIOCSWINSZ, winsz)
         os.set_blocking(self._pfd, False)
         s = set(["stdin", "stdout", "stderr", "start_new_session"]).intersection(kwargs)
         if s:
@@ -707,7 +712,9 @@ class SContainer(LDMSDContainer):
             self.shell.write(b'{ cat <<\xFFEOF\n')
             self.shell.write(BYTES(in_data).replace(b'$', b'\\$'))
             self.shell.write(b'\n\xFFEOF\n')
-            self.shell.write(b'} | ')
+            self.shell.write(b'} | sed -z \'s/\\n$//\' | ') # eliminate the '\n'
+                                                            # we inserted right
+                                                            # before '\xFFEOF'
         if env:
             for k, v in env.items():
                 self.shell.write(BYTES(k))

@@ -13,6 +13,7 @@ import docker
 import argparse
 import TADA
 import logging
+import atexit
 
 from distutils.spawn import find_executable
 from LDMS_Test import LDMSDCluster, LDMSDContainer, process_args, \
@@ -126,22 +127,28 @@ spec = {
         "ldmsd-failover-agg-12" : {
                 "!extends" : "ldmsd-base",
             "config" : [ # additional config applied after prdcrs
+                "option -n agg-12",
                 "prdcr_start_regex regex=.*",
                 "updtr_add name=all interval=1000000 offset=%offset%",
                 "updtr_prdcr_add name=all regex=.*",
                 "updtr_start name=all",
-                "failover_config host=agg-11 port=10000 xprt=sock type=active interval=1000000 timeout_factor=2",
+                "failover_config host=agg-11 port=10000 xprt=sock"
+                "  type=active interval=1000000 timeout_factor=2"
+                "  peer_name=agg-11",
                 "failover_start"]#last two lines are for failover config
             },
 
          "ldmsd-failover-agg-11" : {
                 "!extends" : "ldmsd-base",
             "config" : [ # additional config applied after prdcrs
+                "option -n agg-11",
                 "prdcr_start_regex regex=.*",
                 "updtr_add name=all interval=1000000 offset=%offset%",
                 "updtr_prdcr_add name=all regex=.*",
                 "updtr_start name=all",
-                "failover_config host=agg-12 port=10000 xprt=sock type=active interval=1000000 timeout_factor=2",
+                "failover_config host=agg-12 port=10000 xprt=sock"
+                "  type=active interval=1000000 timeout_factor=2"
+                "  peer_name=agg-12",
                 "failover_start"]
             }
 
@@ -209,7 +216,7 @@ spec = {
 
     #"image": "ovis-centos-build:slurm",
     "cap_add": [ "SYS_PTRACE", "SYS_ADMIN" ],
-    "image": "ovis-centos-build",
+    "image": args.image,
     "ovis_prefix": PREFIX,
     "env" : { "FOO": "BAR" },
     "mounts": [
@@ -257,7 +264,15 @@ def ldms_ls(host, port = LDMSD_PORT, l = False):
     except:
         return None
 #### Start! ####
+cluster = None
 test.start()
+
+@atexit.register
+def at_exit():
+    rc = test.finish()
+    if cluster is not None:
+        cluster.remove()
+    os._exit(rc)
 
 log.info("-- Get or create the cluster --")
 cluster = LDMSDCluster.get(spec["name"], create = True, spec = spec)
@@ -276,7 +291,7 @@ cluster.start_daemons()
 cluster.make_known_hosts()
 
 log.info("... wait a bit to make sure ldmsd's are up")
-time.sleep(8)
+time.sleep(15)
 
 log.info("-- ldms_ls to agg-2 --")
 result = set(ldms_ls("agg-2"))
@@ -457,6 +472,4 @@ while True:
                                        .format(lst, expect))
     break
 
-
-test.finish()
-cluster.remove() # this destroys entire cluster
+# see at_exit()

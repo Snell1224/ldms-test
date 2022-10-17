@@ -7,6 +7,8 @@ import json
 import time
 import argparse
 import subprocess
+import shutil
+import atexit
 import TADA
 
 from distutils.spawn import find_executable
@@ -489,7 +491,16 @@ test.add_assertion(284, "Job 10000 has 3 nodes")
 test.add_assertion(285, "Job 10100 has 4 nodes")
 
 #### Start! ####
+cluster = None
 test.start()
+
+@atexit.register
+def at_exit():
+    rc = test.finish()
+    if cluster is not None:
+        cluster.remove()
+    shutil.rmtree(DB + "/slurm-test", ignore_errors = True)
+    os._exit(rc)
 
 print("-- Get or create the cluster --")
 cluster = LDMSDCluster.get(spec["name"], create = True, spec = spec)
@@ -503,7 +514,7 @@ print("-- Start daemons --")
 cluster.start_daemons()
 
 print("... wait a bit to make sure ldmsd's are up")
-time.sleep(5)
+time.sleep(10)
 
 def verify(num, cond, cond_str):
     a = test.assertions[num]
@@ -598,7 +609,7 @@ def deliver_events(events):
          cont = cluster.get_container("compute-{0}".format(int(node[0]['data']['nodeid'])+1))
          for event in node:
             update_expect_file(json_path+"/event-file.json", event)
-            rc, out = cont.exec_run("/db/tada/lib/test_stream_publish -h compute-{node} -x sock -p 10000"
+            rc, out = cont.exec_run("ldmsd_stream_publish -h compute-{node} -x sock -p 10000"
                               " -a munge -s test-slurm-stream -t json -f {fname}"
                                 .format(fname="/db/event-file.json",
                                         node=int(node[0]['data']['nodeid'])+1))
@@ -610,6 +621,8 @@ deliver_events(events_3_27)
 
 events_4_64 = create_events(4, 64, 10100)
 deliver_events(events_4_64)
+
+time.sleep(2)
 
 
 cont = cluster.get_container('agg-1')
@@ -689,9 +702,4 @@ rc, out = cont.exec_run("sos_cmd -C /db/slurm-test -qS mt-slurm -X time_job -V n
 
 verify(285, int(out.split('\n')[1]) == 4, "node count 4 correct")
 
-test.finish()
-
-cont.exec_run("rm -rf /db/slurm-test")
-cluster.remove()
-
-print('Test Finished')
+# see at_exit()

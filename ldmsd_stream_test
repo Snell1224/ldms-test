@@ -24,6 +24,7 @@ import os
 import sys
 import TADA
 import time
+import atexit
 
 from distutils.spawn import find_executable
 from LDMS_Test import LDMSDCluster, D, process_args, add_common_args, \
@@ -140,7 +141,6 @@ spec = {
     "env" : {
         "LD_LIBRARY_PATH" : TADA_LIB + ":/opt/ovis/lib:/opt/ovis/lib64",
         "LDMSD_PLUGIN_LIBPATH" : TADA_LIB + ":/opt/ovis/lib/ovis-ldms:/opt/ovis/lib64/ovis-ldms",
-        "PYTHONPATH" : "/opt/ovis/lib/python3.6/site-packages",
     },
     "mounts" : args.mount + [
         "{0}:{1}:ro".format(os.path.realpath(sys.path[0]), TADA_SRC),
@@ -305,7 +305,15 @@ for t in STREAM_TYPES:
             add_assertion(test, "{0}-{1}-{2}".format(sub, t, sz),
                   "{n} receives {sz} {t} streams".format(n=_n, sz=sz, t=t))
 
+cluster = None
 test.start()
+
+@atexit.register
+def at_exit():
+    rc = test.finish()
+    if cluster is not None:
+        cluster.remove()
+    os._exit(rc)
 
 cluster = LDMSDCluster.get(args.clustername, create = True, spec = spec)
 
@@ -329,7 +337,7 @@ def _lib_avail():
     return files_avail(
             ["libtada.so", "libtest_stream_sampler.so",
              "libtest_stream_sampler.so.0", "libutil.so",
-             "test_ovis_ev", "test_ovis_json", "test_stream_publish"]
+             "test_ovis_ev", "test_ovis_json"]
         )
 
 log.info("waiting for libraries to be available across all containers...")
@@ -358,6 +366,7 @@ def subscriber_case(sub_cont, pub_cont, hostname, stream_type, data_sz):
     D.port = PORTS[stream_type]
 
     start_subscriber(sub_cont, PORTS[stream_type], cont_fout)
+    time.sleep(5)
     log.info("--- Sending stream to ldmsd_stream_subscriber")
     for i in range(0, SAMPLE_SIZES[data_sz]):
         start_publisher(pub_cont, hostname, PORTS[stream_type], stream_type, cont_fin)
@@ -472,5 +481,4 @@ for t in STREAM_TYPES:
         subscriber_case(sub_cont, pub_cont, sub_cont.hostname, t, sz)
         ldmsd_case(pub_cont, samplerd_cont, agg_cont, t, sz)
 
-test.finish()
-cluster.remove()
+# see at_exit()

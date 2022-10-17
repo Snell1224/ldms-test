@@ -8,6 +8,7 @@ for E in "$@"; do
 done
 
 IMAGE=${IMAGE:-${TOPDIR}/ovis-centos-build}
+DOCKER_IMAGE=${DOCKER_IMAGE:-docker://ovishpc/ovis-centos-build}
 
 [[ -t 1 ]] && {
 	# under a tty
@@ -41,7 +42,7 @@ set -e
 	INFO "Image ${IMAGE} existed"
 } || {
 	INFO "Building ${IMAGE} ..."
-	singularity build --sandbox ${IMAGE} docker://ovishpc/ovis-centos-build
+	singularity build --sandbox ${IMAGE} ${DOCKER_IMAGE}
 }
 
 # === amend the image === #
@@ -64,6 +65,8 @@ INFO "  making etc/ld.so.conf.d/ovis.conf"
 cat > etc/ld.so.conf.d/ovis.conf <<EOF
 /opt/ovis/lib
 /opt/ovis/lib64
+/opt/ovis/lib/ovis-ldms
+/opt/ovis/lib64/ovis-ldms
 EOF
 
 INFO " correcting etc/shadow, etc/gshadow permission (for sshd in containers)"

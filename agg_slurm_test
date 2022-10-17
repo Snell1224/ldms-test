@@ -33,6 +33,7 @@ import time
 import argparse
 import TADA
 import logging
+import atexit
 
 from distutils.spawn import find_executable
 from LDMS_Test import LDMSDCluster, LDMSDContainer, process_args, \
@@ -381,20 +382,33 @@ def cleanup_db(cluster):
     cont.exec_run("rm -rf {}".format(" ".join(LST)))
 
 #### Start! ####
+cluster = None
 test.start()
+
+@atexit.register
+def at_exit():
+    rc = test.finish()
+    if cluster is not None:
+        cluster.remove()
+    os._exit(rc)
 
 log.info("-- Get or create the cluster --")
 cluster = LDMSDCluster.get(spec["name"], create = True, spec = spec)
 cleanup_db(cluster)
 
 cont = cluster.get_container("headnode")
+agg2 = cluster.get_container("agg-2")
+
+agg2.exec_run("mkdir -p {}/sos".format(STORE_ROOT))
+agg2.exec_run("mkdir -p {}/papi".format(STORE_ROOT))
+agg2.exec_run("mkdir -p {}/slurm".format(STORE_ROOT))
 
 log.info("-- Preparing syspapi JSON file --")
 papi_json = {
             "schema" : "syspapi",
             "events" : [
-                "PAPI_LD_INS",
-                "PAPI_SR_INS",
+                "PAPI_L1_DCM",
+                "PAPI_TOT_INS",
                 "PAPI_TOT_CYC",
             ]
         }
@@ -404,8 +418,8 @@ log.info("-- Preparing jobpapi JSON file --")
 papi_json = {
             "schema" : "jobpapi",
             "events" : [
-                "PAPI_LD_INS",
-                "PAPI_SR_INS",
+                "PAPI_L1_DCM",
+                "PAPI_TOT_INS",
                 "PAPI_TOT_CYC",
             ]
         }
@@ -556,12 +570,10 @@ def check_papi(data):
         _ret[comp_id] = switches
     return _ret
 
-agg2 = cluster.get_container("agg-2")
-
 slurm = sos_query(agg2, "/{}/slurm/slurm".format(STORE_ROOT), "mt-slurm", "time_job")
 papi_tot_cyc = sos_query(agg2, "/{}/papi/papi".format(STORE_ROOT), "PAPI_TOT_CYC", "time_job")
-papi_sr_ins = sos_query(agg2, "/{}/papi/papi".format(STORE_ROOT), "PAPI_SR_INS", "time_job")
-papi_ld_ins = sos_query(agg2, "/{}/papi/papi".format(STORE_ROOT), "PAPI_LD_INS", "time_job")
+papi_sr_ins = sos_query(agg2, "/{}/papi/papi".format(STORE_ROOT), "PAPI_TOT_INS", "time_job")
+papi_ld_ins = sos_query(agg2, "/{}/papi/papi".format(STORE_ROOT), "PAPI_L1_DCM", "time_job")
 syspapi = sos_query(agg2, "/{}/sos/syspapi".format(STORE_ROOT), "syspapi", "time_job_comp")
 meminfo = sos_query(agg2, "/{}/sos/meminfo".format(STORE_ROOT), "meminfo", "time_job_comp")
 
@@ -593,16 +605,11 @@ else: # loop does not break
     if not papi_tot_cyc:
         test.assert_test(4, False, "No PAPI_TOT_CYC data")
     elif not papi_sr_ins:
-        test.assert_test(4, False, "No PAPI_SR_INS data")
+        test.assert_test(4, False, "No PAPI_TOT_INS data")
     elif not papi_ld_ins:
-        test.assert_test(4, False, "No PAPI_LD_INS data")
+        test.assert_test(4, False, "No PAPI_L1_DCM data")
     elif not syspapi:
         test.assert_test(4, False, "No SYSPAPI data")
     else:
         test.assert_test(4, True, "No data missing")
-
-test.finish()
-if DEBUG and sys.flags.interactive:
-    input("Press ENTER to remove cluster (Ctrl-C to debug)")
-cleanup_db(cluster)
-cluster.remove() # this destroys entire cluster
+# see `at_exit()` function

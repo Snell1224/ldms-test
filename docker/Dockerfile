@@ -23,9 +23,19 @@ yum -y install which openssh-server gdb gdb-gdbserver iproute \
 	       python3-devel papi-devel libpfm-devel tmux \
 	       bzip2-devel etcd \
 	       sudo libibverbs-devel libfabric-devel \
+	       libuuid-devel \
+	       librdkafka-devel \
+	       slurm slurm-devel \
+	       slurm-slurmd slurm-slurmctld \
+	       munge munge-devel \
+	       java-11-openjdk \
 	       ; \
 yum -y group install "Development Tools" ; \
 yum clean all ; \
+'
+
+# Keys
+RUN /bin/bash -c '\
 yes "" | ssh-keygen ; \
 cat /root/.ssh/id*.pub > /root/.ssh/authorized_keys ; \
 cd /etc/ssh ; \
@@ -33,27 +43,10 @@ echo "---- Generate sshd keys ----" ; \
 yes "" | ssh-keygen -t rsa -f ssh_host_rsa_key ; \
 yes "" | ssh-keygen -t ecdsa -f ssh_host_ecdsa_key ; \
 yes "" | ssh-keygen -t ed25519 -f ssh_host_ed25519_key ; \
-echo "---- Build and install munge-0.5.14 ----" ; \
-cd /root ; \
-curl -LO https://github.com/dun/munge/releases/download/munge-0.5.14/munge-0.5.14.tar.xz ; \
-curl -LO https://github.com/dun/munge/releases/download/munge-0.5.14/munge-0.5.14.tar.xz.asc ; \
-curl -LO https://github.com/dun.gpg ; \
-rpmbuild -ta munge-0.5.14.tar.xz ; \
-cd /root/rpmbuild/RPMS/x86_64 ; \
-yum -y install munge-*.rpm ; \
-rm -rf /root/rpmbuild/BUILD/munge-0.5.14 ; \
 echo "---- Generate munge key ----" ; \
 dd if=/dev/zero of=/etc/munge/munge.key bs=4096 count=1 \
     && chmod 600 /etc/munge/munge.key \
     && chown munge:munge /etc/munge/munge.key ; \
-echo "---- Build and install slurm ----" ; \
-cd /root ; \
-curl -O https://download.schedmd.com/slurm/slurm-20.11.7.tar.bz2 ; \
-rpmbuild -ta slurm-20.11.7.tar.bz2 ; \
-cd /root/rpmbuild/RPMS/x86_64 ; \
-yum -y install slurm-*.rpm ; \
-rm -rf /root/rpmbuild/BUILD/slurm-17.02.11 ; \
-yum clean all ; \
 '
 
 RUN /bin/bash -c '\
@@ -63,6 +56,7 @@ yes | pip3 install numpy ; \
 yes | pip3 install etcd3 ; \
 yes | pip3 install PyYAML ; \
 yes | pip3 install ipython ; \
+yes | pip3 install pandas ; \
 '
 
 RUN /bin/echo >/etc/tmux.conf -e "\
@@ -132,3 +126,9 @@ RUN /bin/bash -c "\
 yum install -y pssh ; \
 yum clean all ; \
 "
+
+RUN set -e ;\
+    pushd /opt/ ;\
+    curl -LO https://archive.apache.org/dist/kafka/2.1.0/kafka_2.12-2.1.0.tgz ;\
+    tar xzf kafka_2.12-2.1.0.tgz ; \
+    mkdir kafka_2.12-2.1.0/logs/ ;

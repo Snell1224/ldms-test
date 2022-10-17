@@ -76,3 +76,45 @@ ip_addr_db = sing_addr.db
 
 
 # NOTE: docker runtime does not have docker-specific parameters
+
+
+[direct_prdcr_subscribe_test]
+# This section is used by `direct_prdcr_subscribe_test` script. The script
+# requires 4 sampler daemons: SAMP1, SAMP2, AGG1, and AGG2. The tester can
+# specify HOST and PORT for each daemon or not specifying them and use the
+# default values. The default HOST is "localhost", and the ports are 10001
+# (SAMP1), 10002 (SAMP2), 10003 (AGG1), and 10004 (AGG2). The default transport
+# (XPRT) is "sock". Since the test script runs directly on the hosts, it needs
+# to remotely execute commands via SSH. The `SSH_PORT` parameter overrides the
+# default port 22.
+#
+# Example:
+#
+# XPRT = rdma
+# SAMP1_HOST = cygnus-01-iw
+# SAMP1_PORT = 10001
+# SAMP2_HOST = cygnus-02-iw
+# SAMP2_PORT = 10002
+# AGG1_HOST = cygnus-03-iw
+# AGG1_PORT = 10003
+# AGG2_HOST = cygnus-04-iw
+# AGG2_PORT = 10004
+# SSH_PORT = 22
+
+
+[direct_ldms_ls_conn_test]
+# This section is used only by `direct_ldms_ls_conn_test` script. The script
+# requires only one sampler daemon and one remote host. SAMP1_HOST is the host
+# to run the sampler daemon, and SAMP1_PORT is the port of the sampler daemon.
+# The SSH_PORT can be specified to use SSH over a port other than 22 (default).
+# The `SAMPX_HOST` is the dead host. A private IP address that is not assigned
+# to any host is recommended. `SAMPX_PORT` is a port value to be used with
+# `SAMPX_HOST` to test the dead-host case with `ldms_ls`.
+#
+# Example:
+# XPRT = rdma
+# SAMP1_HOST = cygnus-01-iw
+# SAMP1_PORT = 10001
+# SSH_PORT = 22
+# SAMPX_HOST = 10.11.12.13
+# SAMPX_PORT = 10001
